@@ -3,6 +3,8 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
+#include <math.h>
 
 //Assume the address space is 32 bits, so the max memory size is 4GB
 //Page size is 4KB
@@ -33,7 +35,8 @@ struct tlb {
     */
 
 };
-struct tlb tlb_store;
+
+// struct tlb tlb_store;
 
 
 void set_physical_mem();

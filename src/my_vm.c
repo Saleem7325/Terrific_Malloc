@@ -1,17 +1,111 @@
 #include "my_vm.h"
 
 /*
-Function responsible for allocating and setting your physical memory 
+ * Number of entries we can fit in a Page Table/Directory
+*/
+#define NUM_ENTRIES (PGSIZE / sizeof(pde_t))
+
+/*
+ * Number of bits in address that specify index into page
+*/
+#define OFFSET_BITS ((unsigned long)log2f(PGSIZE))
+
+/*
+ * Number of bits in address that specify index into page table
+*/
+#define PT_BITS  (((sizeof(pde_t) * 8) - OFFSET_BITS) / 2)
+
+/*
+ * Number of bits in address that specify index into page directory
+*/
+#define PD_BITS (((sizeof(pde_t) * 8) - OFFSET_BITS) % 2) + PT_BITS
+
+/*
+ * Number of virtual address bits
+*/
+#define VIRT_BITS (PT_BITS + PD_BITS)
+
+/*
+ * Number of chars to store in virtual bitmap
+*/
+#define VBMAP_SIZE (VIRT_BITS % 8) == 0 ? (VIRT_BITS / 8) : ((VIRT_BITS / 8) + 1)
+
+/*
+ * Number of chars to store in physical bitmap
+*/
+#define PBMAP_SIZE ((MEMSIZE / PGSIZE) / 8)
+
+/*
+ * Physical memory
+*/
+char *phys_mem;
+
+/*
+ * Bitmap representing all pages in phys_mem
+ * 1 = allocated, 0 = free
+*/
+char page_bitmap[PBMAP_SIZE];
+
+/*
+ * Bitmap representing all possible virtual addresses
+*/
+char *virt_bitmap;
+
+/*
+ * Pointer to Page Directory in phys_mem (points to start of phys_mem).
+ * First page in memory is allocated to page directory.
+*/
+pde_t *page_directory;
+
+/*
+ * For validating/checking page_bitmap
+*/
+int get_bit_at_index(char *bitmap, int index){
+    int byte_index = index / 8;
+    int bit_index = index % 8;
+
+    char byte = bitmap[byte_index];
+    if(byte & (1 << bit_index)){
+        return 1;
+    }else{
+        return 0;
+    }
+}
+
+/*
+ * Function responsible for allocating and setting your physical memory 
 */
 void set_physical_mem() {
-
     //Allocate physical memory using mmap or malloc; this is the total size of
     //your memory you are simulating
-
-    
     //HINT: Also calculate the number of physical and virtual pages and allocate
     //virtual and physical bitmaps and initialize them
 
+    // Create physical memory 
+    // Initialize page bitmap 
+    phys_mem = (char *)malloc(MEMSIZE);
+    memset(page_bitmap, 0, PBMAP_SIZE);
+
+    // Assign Page directory first page in memory and initialize
+    page_directory = (pde_t *)phys_mem;
+    memset(page_directory, 0, PGSIZE);
+
+    // Create and initialize virtual bitmap
+    virt_bitmap = (char *)malloc(VBMAP_SIZE);
+    memset(virt_bitmap, 0, VBMAP_SIZE);
+
+    // Set first bit in bitmap since that is where page directory is being stored 
+    char *byte = &page_bitmap[0];
+    *byte = *byte | 1;
+
+    // Print config macros for debugging
+    printf("Number of entries: %d\n", NUM_ENTRIES);
+    printf("Offset bits: %ld\n", OFFSET_BITS);
+    printf("Page table bits: %ld\n", PT_BITS);
+    printf("Page directory bits: %ld\n", PD_BITS);
+    printf("Virtual bits: %ld\n", VIRT_BITS);
+    printf("Virtual bitmap size: %ld\n", VBMAP_SIZE);
+    printf("Page bitmap size: %d\n", PBMAP_SIZE);
 }
 
 
@@ -19,9 +113,7 @@ void set_physical_mem() {
  * Part 2: Add a virtual to physical page translation to the TLB.
  * Feel free to extend the function arguments or return type.
  */
-int
-add_TLB(void *va, void *pa)
-{
+int add_TLB(void *va, void *pa) {
 
     /*Part 2 HINT: Add a virtual to physical page translation to the TLB */
 
@@ -34,8 +126,7 @@ add_TLB(void *va, void *pa)
  * Returns the physical page address.
  * Feel free to extend this function and change the return type.
  */
-pte_t *
-check_TLB(void *va) {
+pte_t *check_TLB(void *va) {
 
     /* Part 2: TLB lookup code here */
 
@@ -49,9 +140,7 @@ check_TLB(void *va) {
  * Part 2: Print TLB miss rate.
  * Feel free to extend the function arguments or return type.
  */
-void
-print_TLB_missrate()
-{
+void print_TLB_missrate() {
     double miss_rate = 0;	
 
     /*Part 2 Code here to calculate and print the TLB miss rate*/
@@ -89,9 +178,7 @@ as an argument, and sets a page table entry. This function will walk the page
 directory to see if there is an existing mapping for a virtual address. If the
 virtual address is not present, then a new entry will be added
 */
-int
-page_map(pde_t *pgdir, void *va, void *pa)
-{
+int page_map(pde_t *pgdir, void *va, void *pa) {
 
     /*HINT: Similar to translate(), find the page directory (1st level)
     and page table (2nd-level) indices. If no mapping exists, set the
@@ -205,6 +292,3 @@ void mat_mult(void *mat1, void *mat2, int size, void *answer) {
         }
     }
 }
-
-
-
