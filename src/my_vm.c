@@ -57,6 +57,8 @@ char *virt_bitmap;
 */
 pde_t *page_directory;
 
+/*__________________ HELPER FUNCTIONS __________________*/
+
 /*
  * For validating/checking page_bitmap
 */
@@ -71,6 +73,8 @@ int get_bit_at_index(char *bitmap, int index){
         return 0;
     }
 }
+
+/*__________________ VMEM FUNCTIONS __________________*/
 
 /*
  * Function responsible for allocating and setting your physical memory 
@@ -151,8 +155,6 @@ void print_TLB_missrate() {
     fprintf(stderr, "TLB miss rate %lf \n", miss_rate);
 }
 
-
-
 /*
 The function takes a virtual address and page directories starting address and
 performs translation to return the physical address
@@ -165,7 +167,20 @@ pte_t *translate(pde_t *pgdir, void *va) {
     * Part 2 HINT: Check the TLB before performing the translation. If
     * translation exists, then you can return physical address from the TLB.
     */
+    int pd_index = (va >> (PT_BITS + OFFSET_BITS));
 
+    int mask = ((1 << PT_BITS) - 1);
+    int pt_index = ((va >> (OFFSET_BITS)) & mask);
+
+    pde_t *page_table = pgdir[pd_index];
+
+    if(page_table != NULL){
+        pte_t *entry = page_table[pt_index];
+
+        if(entry != NULL){
+            return entry;
+        }
+    }
 
     //If translation not successful, then return NULL
     return NULL; 
