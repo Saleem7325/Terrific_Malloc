@@ -112,6 +112,7 @@ void *virtual_address(void *pa, int pages){
 
     unsigned int vbits = 0;
     memcpy(&vbits, virt_bitmap, VBMAP_SIZE);
+    printf("Virtual bits: %d\n", vbits);
 
     unsigned int vmap_cpy = vbits;
     vmap_cpy += pages;
@@ -121,8 +122,8 @@ void *virtual_address(void *pa, int pages){
         0000000000000000000000000000000000000
         0000000000000000000123123123123123123
     */
-    vbits = ((vbits <<  VIRT_BITS) & ofset);
-    printf("Virtual Address: %p\n", (void *)vbits);
+    vbits = ((vbits <<  OFFSET_BITS) | ofset);
+    // printf("Virtual Address: %p\n", (void *)vbits);
     return (void *)vbits;
 }
 
@@ -251,7 +252,7 @@ int page_map(pde_t *pgdir, void *va, void *pa) {
     }
 
     pte_t *entry = &page_table[pt_index];
-    if(!entry){
+    if(entry && *entry == 0){
         *entry = (pte_t)pa;
     }else{
         // Entry is present
@@ -295,8 +296,7 @@ void *get_next_avail(int num_pages) {
     for(int i = start_page; i < start_page + num_pages; ++i){
         set_bit_at_index(page_bitmap, i);
     }
-    
-    printf("Page Address: %p\n", (void *)(phys_mem + (start_page * PGSIZE)));
+
     // Calculate and return the starting address of the block
     return (void *)(phys_mem + (start_page * PGSIZE));
 }
@@ -336,10 +336,12 @@ void *t_malloc(unsigned int num_bytes) {
     void *vptr = virtual_address(ptr, pages);
     int ret = page_map(page_directory, vptr, ptr);
     while(ret == -1){
-        void *vptr = virtual_address(ptr, pages);
-        int ret = page_map(page_directory, vptr, ptr);
+        vptr = virtual_address(ptr, pages);
+        ret = page_map(page_directory, vptr, ptr);
     }
 
+    printf("Page Address: %p\n", ptr);
+    printf("Virtual Address: %p\n\n", vptr);
     return vptr;
 }
 
