@@ -1,0 +1,7 @@
+b t_malloc
+b set_physical_mem
+b translate
+b page_map
+b get_next_avail
+b main
+b virtual_address

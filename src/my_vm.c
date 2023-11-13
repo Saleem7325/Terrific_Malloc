@@ -38,7 +38,7 @@
 /*
  * Physical memory
 */
-char *phys_mem;
+char *phys_mem = NULL;
 
 /*
  * Bitmap representing all pages in phys_mem
@@ -57,6 +57,8 @@ char *virt_bitmap;
 */
 pde_t *page_directory;
 
+void *get_next_avail(int num_pages);
+
 /*__________________ HELPER FUNCTIONS __________________*/
 
 /*
@@ -74,13 +76,54 @@ int get_bit_at_index(char *bitmap, int index){
     }
 }
 
+int set_bit_at_index(char *bitmap, int index){
+    int byte_index = index / 8;
+    int bit_index = index % 8;
+    char byte = bitmap[byte_index];
+    
+    // Set the bit at 'bit_index' to 1
+    byte |= (1 << bit_index);
+    
+    // Store the modified byte back in the bitmap
+    bitmap[byte_index] = byte;
+}
+
 int page_directory_index(void *va){
-    return (va >> (PT_BITS + OFFSET_BITS));
+    long unsigned int vaddr = (long unsigned int)va;
+    return (vaddr >> (PT_BITS + OFFSET_BITS));
 }
 
 int page_table_index(void *va){
     int mask = ((1 << PT_BITS) - 1);
-    return ((va >> (OFFSET_BITS)) & mask);
+    return (((long unsigned int)va >> (OFFSET_BITS)) & mask);
+}
+
+int offset(void *va){
+    int mask = ((1 << OFFSET_BITS) - 1);
+    return ((int)va & mask);
+}
+
+void *virtual_address(void *pa, int pages){
+    if(!virt_bitmap){
+        return NULL;
+    }
+
+    int ofset = offset(pa);
+
+    unsigned int vbits = 0;
+    memcpy(&vbits, virt_bitmap, VBMAP_SIZE);
+
+    unsigned int vmap_cpy = vbits;
+    vmap_cpy += pages;
+    memcpy(virt_bitmap, &vmap_cpy, VBMAP_SIZE);
+    /*
+        [ 20 bits virtual ][ 12 bits offset ]
+        0000000000000000000000000000000000000
+        0000000000000000000123123123123123123
+    */
+    vbits = ((vbits <<  VIRT_BITS) & ofset);
+    printf("Virtual Address: %p\n", (void *)vbits);
+    return (void *)vbits;
 }
 
 /*__________________ VMEM FUNCTIONS __________________*/
@@ -89,11 +132,6 @@ int page_table_index(void *va){
  * Function responsible for allocating and setting your physical memory 
 */
 void set_physical_mem() {
-    //Allocate physical memory using mmap or malloc; this is the total size of
-    //your memory you are simulating
-    //HINT: Also calculate the number of physical and virtual pages and allocate
-    //virtual and physical bitmaps and initialize them
-
     // Create physical memory 
     // Initialize page bitmap 
     phys_mem = (char *)malloc(MEMSIZE);
@@ -118,7 +156,7 @@ void set_physical_mem() {
     printf("Page directory bits: %ld\n", PD_BITS);
     printf("Virtual bits: %ld\n", VIRT_BITS);
     printf("Virtual bitmap size: %ld\n", VBMAP_SIZE);
-    printf("Page bitmap size: %d\n", PBMAP_SIZE);
+    printf("Page bitmap size: %d\n\n", PBMAP_SIZE);
 }
 
 
@@ -178,7 +216,6 @@ pte_t *translate(pde_t *pgdir, void *va) {
     */
     int pd_index = page_directory_index(va);
     int pt_index = page_table_index(va);
-
     pde_t *page_table = pgdir[pd_index];
 
     if(page_table != NULL){
@@ -201,20 +238,67 @@ directory to see if there is an existing mapping for a virtual address. If the
 virtual address is not present, then a new entry will be added
 */
 int page_map(pde_t *pgdir, void *va, void *pa) {
+    int pd_index = page_directory_index(va);
+    int pt_index = page_table_index(va);
+    pde_t *page_table = pgdir[pd_index];
 
-    /*HINT: Similar to translate(), find the page directory (1st level)
-    and page table (2nd-level) indices. If no mapping exists, set the
-    virtual to physical mapping */
+    if(!page_table){
+        void *pt = get_next_avail(1);
+        memset(pt, 0, PGSIZE);
 
-    return -1;
+        pgdir[pd_index] = (pde_t)pt;
+        page_table = pgdir[pd_index];
+    }
+
+    pte_t *entry = &page_table[pt_index];
+    if(!entry){
+        *entry = (pte_t)pa;
+    }else{
+        // Entry is present
+        return -1;
+    }
+
+    return 0;
 }
 
 
 /*Function that gets the next available page
 */
 void *get_next_avail(int num_pages) {
- 
     //Use virtual address bitmap to find the next free page
+    int free_pages = 0;
+    int start_page = -1;
+    
+    for(int i = 0; i < PBMAP_SIZE * 8; ++i){
+        if (get_bit_at_index(page_bitmap, i) == 0){
+            // Page is free
+            if(start_page == -1){
+                start_page = i;  // Mark start of free block
+            }
+            
+            if(++free_pages == num_pages){
+                break;  // Found a block of required size
+            }
+        }else{
+            // Page is allocated, reset the count
+            free_pages = 0;
+            start_page = -1;
+        }
+    }
+
+    if(free_pages < num_pages){
+        // Not enough continuous pages available
+        return NULL;
+    }
+    
+    // Mark the found pages as allocated in the physical bitmap
+    for(int i = start_page; i < start_page + num_pages; ++i){
+        set_bit_at_index(page_bitmap, i);
+    }
+    
+    printf("Page Address: %p\n", (void *)(phys_mem + (start_page * PGSIZE)));
+    // Calculate and return the starting address of the block
+    return (void *)(phys_mem + (start_page * PGSIZE));
 }
 
 
@@ -222,19 +306,41 @@ void *get_next_avail(int num_pages) {
 and used by the benchmark
 */
 void *t_malloc(unsigned int num_bytes) {
+    /* 
+    * HINT: If the physical memory is not yet initialized, then allocate and initialize.
+    */
 
     /* 
-     * HINT: If the physical memory is not yet initialized, then allocate and initialize.
-     */
-
-   /* 
     * HINT: If the page directory is not initialized, then initialize the
     * page directory. Next, using get_next_avail(), check if there are free pages. If
     * free pages are available, set the bitmaps and map a new page. Note, you will 
     * have to mark which physical pages are used. 
     */
+    if(!phys_mem){
+        set_physical_mem();
+    }
 
-    return NULL;
+    void *ptr;
+    int pages = 1;
+    if(num_bytes < PGSIZE){
+        ptr = get_next_avail(pages);
+    }else{
+        pages = (num_bytes % PGSIZE) == 0 ? (num_bytes / PGSIZE) : ((num_bytes / PGSIZE) + 1);
+        ptr = get_next_avail(pages);
+    }
+
+    if(!ptr){
+        return NULL;
+    }
+
+    void *vptr = virtual_address(ptr, pages);
+    int ret = page_map(page_directory, vptr, ptr);
+    while(ret == -1){
+        void *vptr = virtual_address(ptr, pages);
+        int ret = page_map(page_directory, vptr, ptr);
+    }
+
+    return vptr;
 }
 
 /* Responsible for releasing one or more memory pages using virtual address (va)
