@@ -74,6 +74,15 @@ int get_bit_at_index(char *bitmap, int index){
     }
 }
 
+int page_directory_index(void *va){
+    return (va >> (PT_BITS + OFFSET_BITS));
+}
+
+int page_table_index(void *va){
+    int mask = ((1 << PT_BITS) - 1);
+    return ((va >> (OFFSET_BITS)) & mask);
+}
+
 /*__________________ VMEM FUNCTIONS __________________*/
 
 /*
@@ -167,10 +176,8 @@ pte_t *translate(pde_t *pgdir, void *va) {
     * Part 2 HINT: Check the TLB before performing the translation. If
     * translation exists, then you can return physical address from the TLB.
     */
-    int pd_index = (va >> (PT_BITS + OFFSET_BITS));
-
-    int mask = ((1 << PT_BITS) - 1);
-    int pt_index = ((va >> (OFFSET_BITS)) & mask);
+    int pd_index = page_directory_index(va);
+    int pt_index = page_table_index(va);
 
     pde_t *page_table = pgdir[pd_index];
 
