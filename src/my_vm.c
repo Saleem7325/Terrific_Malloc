@@ -26,9 +26,15 @@
 #define VIRT_BITS (PT_BITS + PD_BITS)
 
 /*
+ * Number of bits in virtual bitmap
+*/
+#define VBMAP_SIZE ((unsigned long)pow(2, VIRT_BITS))
+
+/*
  * Number of chars to store in virtual bitmap
 */
-#define VBMAP_SIZE (VIRT_BITS % 8) == 0 ? (VIRT_BITS / 8) : ((VIRT_BITS / 8) + 1)
+#define VBMAP_BYTES ((VBMAP_SIZE % 8) == 0 ? (VBMAP_SIZE / 8) : ((VBMAP_SIZE / 8) + 1))
+// #define VBMAP_SIZE (VIRT_BITS % 8) == 0 ? (VIRT_BITS / 8) : ((VIRT_BITS / 8) + 1)
 
 /*
  * Number of chars to store in physical bitmap
@@ -88,6 +94,18 @@ int set_bit_at_index(char *bitmap, int index){
     bitmap[byte_index] = byte;
 }
 
+int clear_bit_at_index(char *bitmap, int index){
+    int byte_index = index / 8;
+    int bit_index = index % 8;
+    char byte = bitmap[byte_index];
+    
+    // Clear the bit at 'bit_index' to 0
+    byte &= ~(1 << bit_index);
+    
+    // Store the modified byte back in the bitmap
+    bitmap[byte_index] = byte;
+}
+
 int page_directory_index(void *va){
     long unsigned int vaddr = (long unsigned int)va;
     return (vaddr >> (PT_BITS + OFFSET_BITS));
@@ -104,27 +122,38 @@ int offset(void *va){
 }
 
 void *virtual_address(void *pa, int pages){
-    if(!virt_bitmap){
+    unsigned long free_pages = 0;
+    unsigned long start_page = -1;
+    
+    for(int i = 0; i < VBMAP_SIZE; ++i){
+        if (get_bit_at_index(virt_bitmap, i) == 0){
+            // Page is free
+            if(start_page == -1){
+                start_page = i;  // Mark start of free block
+            }
+            
+            if(++free_pages == pages){
+                break;  // Found a block of required size
+            }
+        }else{
+            // Page is allocated, reset the count
+            free_pages = 0;
+            start_page = -1;
+        }
+    }
+
+    if(free_pages < pages){
+        // Not enough continuous pages available
         return NULL;
+    }
+    
+    // Mark the found pages as allocated in the physical bitmap
+    for(int i = start_page; i < start_page + pages; ++i){
+        set_bit_at_index(virt_bitmap, i);
     }
 
     int ofset = offset(pa);
-
-    unsigned int vbits = 0;
-    memcpy(&vbits, virt_bitmap, VBMAP_SIZE);
-    printf("Virtual bits: %d\n", vbits);
-
-    unsigned int vmap_cpy = vbits;
-    vmap_cpy += pages;
-    memcpy(virt_bitmap, &vmap_cpy, VBMAP_SIZE);
-    /*
-        [ 20 bits virtual ][ 12 bits offset ]
-        0000000000000000000000000000000000000
-        0000000000000000000123123123123123123
-    */
-    vbits = ((vbits <<  OFFSET_BITS) | ofset);
-    // printf("Virtual Address: %p\n", (void *)vbits);
-    return (void *)vbits;
+    return (void *)((start_page <<  OFFSET_BITS) | ofset);
 }
 
 /*__________________ VMEM FUNCTIONS __________________*/
@@ -143,12 +172,13 @@ void set_physical_mem() {
     memset(page_directory, 0, PGSIZE);
 
     // Create and initialize virtual bitmap
-    virt_bitmap = (char *)malloc(VBMAP_SIZE);
-    memset(virt_bitmap, 0, VBMAP_SIZE);
+    virt_bitmap = (char *)malloc(VBMAP_BYTES);
+    memset(virt_bitmap, 0, VBMAP_BYTES);
 
-    // Set first bit in bitmap since that is where page directory is being stored 
-    char *byte = &page_bitmap[0];
-    *byte = *byte | 1;
+    // Set first bit in bitmap since that is where page directory is being stored
+    set_bit_at_index(page_bitmap, 0); 
+    // char *byte = &page_bitmap[0];
+    // *byte = *byte | 1;
 
     // Print config macros for debugging
     printf("Number of entries: %d\n", NUM_ENTRIES);
@@ -156,7 +186,8 @@ void set_physical_mem() {
     printf("Page table bits: %ld\n", PT_BITS);
     printf("Page directory bits: %ld\n", PD_BITS);
     printf("Virtual bits: %ld\n", VIRT_BITS);
-    printf("Virtual bitmap size: %ld\n", VBMAP_SIZE);
+    printf("Virtual bitmap bits: %ld\n", VBMAP_SIZE);
+    printf("Virtual bitmap bytes: %ld\n", VBMAP_SIZE);
     printf("Page bitmap size: %d\n\n", PBMAP_SIZE);
 }
 
@@ -217,7 +248,7 @@ pte_t *translate(pde_t *pgdir, void *va) {
     */
     int pd_index = page_directory_index(va);
     int pt_index = page_table_index(va);
-    pde_t *page_table = pgdir[pd_index];
+    pde_t *page_table = (pde_t *)pgdir[pd_index];
 
     if(page_table != NULL){
         pte_t *entry = page_table[pt_index];
@@ -333,6 +364,8 @@ void *t_malloc(unsigned int num_bytes) {
         return NULL;
     }
 
+    //TODO: MAP every page.
+
     void *vptr = virtual_address(ptr, pages);
     int ret = page_map(page_directory, vptr, ptr);
     while(ret == -1){
@@ -355,6 +388,33 @@ void t_free(void *va, int size) {
      *
      * Part 2: Also, remove the translation from the TLB
      */
+
+    int num_pages = ((size % PGSIZE) == 0 ? (size / PGSIZE) : ((size / PGSIZE) + 1));
+    //printf("NUM PAGES: %d\n", num_pages);
+    void *current_va = va;
+
+    for(int i = 0; i < num_pages; ++i){
+        // Translate to get physical address
+        pte_t *pte = translate(page_directory, current_va);
+        
+        //printf("DEBUG: PTE at %p: %lu\n", current_va, (unsigned long)*pte);
+
+        if(pte && *pte != 0){
+            // Get index of physical page
+            int page_index = ((char *)*pte - phys_mem) / PGSIZE;
+            // Clear page table entry
+            *pte = 0;
+            // Clear bit in physical bitmap
+            clear_bit_at_index(page_bitmap, page_index);
+            // TODO: Clear bit in virtual bitmap 
+            // Move to next page
+            current_va = (void *)((char *)current_va + PGSIZE);
+        } else {
+            // Handle error: Trying to free an unallocated page
+            fprintf(stderr, "Error: Attempting to free an unallocated page at %p\n", current_va);
+            return;
+        }
+    }
     
 }
 
