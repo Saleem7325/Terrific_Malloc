@@ -252,7 +252,7 @@ pte_t *translate(pde_t *pgdir, void *va) {
     pde_t *page_table = (pde_t *)pgdir[pd_index];
 
     if(page_table != NULL){
-        pte_t *entry = page_table[pt_index];
+        pte_t *entry = (pte_t *)page_table[pt_index];
 
         if(entry != NULL){
             return entry;
@@ -279,7 +279,7 @@ int page_map(pde_t *pgdir, void *va, void *pa) {
         void *pt = get_next_avail(1);
         memset(pt, '\0', PGSIZE);
 
-        pgdir[pd_index] = (pde_t *)pt;
+        pgdir[pd_index] = (pde_t)pt;
         page_table = (pte_t *)pgdir[pd_index];
     }
 
@@ -406,8 +406,8 @@ void t_free(void *va, int size) {
      *
      * Part 2: Also, remove the translation from the TLB
      */
-     
-    printf("\nVirtual address: %p\n", va);
+
+    printf("Virtual address: %p\n", va);
     int num_pages = 1;
     if(size > PGSIZE){
        num_pages = ((size % PGSIZE) == 0 ? (size / PGSIZE) : ((size / PGSIZE) + 1));
@@ -419,12 +419,12 @@ void t_free(void *va, int size) {
     for(int i = 0; i < num_pages; ++i){
         // Translate to get physical address
         pte_t *pte = translate(page_directory, current_va);
-        printf("Page table entry: %p\n", pte);
+        printf("Page table entry: %p\n\n", pte);
         //printf("DEBUG: PTE at %p: %lu\n", current_va, (unsigned long)*pte);
 
         if(pte){
             // Get index of physical page
-            int page_index = ((char *)*pte - phys_mem) / PGSIZE;
+            int page_index = ((char *)pte - phys_mem) / PGSIZE;
 
             // Clear page table entry
             *pte = 0;
@@ -438,7 +438,6 @@ void t_free(void *va, int size) {
         } else {
             // Handle error: Trying to free an unallocated page
             fprintf(stderr, "Error: Attempting to free an unallocated page at %p\n", current_va);
-            return;
         }
     }
     
