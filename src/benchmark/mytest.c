@@ -54,10 +54,14 @@
 int main() {
     void *ptr = t_malloc(100);
     void *ptr1 = t_malloc(100);
-    void *ptr2 = t_malloc(100);
-    void *ptr3 = t_malloc(100);
-    void *ptr4 = t_malloc(100);
-    void *ptr5 = t_malloc(100);
+    // void *ptr2 = t_malloc(100);
+    // void *ptr3 = t_malloc(100);
+    // void *ptr4 = t_malloc(100);
+    // void *ptr5 = t_malloc(100);
+    // void *ptr6 = t_malloc(10000);
+
+    t_free(ptr, 100);
+    t_free(ptr1, 100);
 
     // virt_bitmap = (char *)malloc(VBMAP_SIZE);
     // memset(virt_bitmap, 0, VBMAP_SIZE);
