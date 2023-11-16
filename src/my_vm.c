@@ -189,7 +189,8 @@ void set_physical_mem() {
     printf("Virtual bits: %ld\n", VIRT_BITS);
     printf("Virtual bitmap bits: %ld\n", VBMAP_SIZE);
     printf("Virtual bitmap bytes: %ld\n", VBMAP_SIZE);
-    printf("Page bitmap size: %d\n\n", PBMAP_SIZE);
+    printf("Page bitmap size: %d\n", PBMAP_SIZE);
+    printf("______________________________________\n");
 }
 
 
@@ -252,7 +253,8 @@ pte_t *translate(pde_t *pgdir, void *va) {
     pde_t *page_table = (pde_t *)pgdir[pd_index];
 
     if(page_table != NULL){
-        pte_t *entry = (pte_t *)page_table[pt_index];
+        // pte_t *entry = (pte_t *)page_table[pt_index];
+        pte_t *entry = (pte_t *)&page_table[pt_index];
 
         if(entry != NULL){
             return entry;
@@ -361,24 +363,24 @@ void *t_malloc(unsigned int num_bytes) {
         ptr = get_next_avail(pages);
         page_map(page_directory, vptr, ptr);
 
-        printf("Page Address: %p\n", ptr);
-        printf("Virtual Address: %p\n\n", vptr);
+        printf("\nPage Address: %p\n", ptr);
+        printf("Virtual Address: %p\n", vptr);
     }else{
         pages = (num_bytes % PGSIZE) == 0 ? (num_bytes / PGSIZE) : ((num_bytes / PGSIZE) + 1);
         vptr = virtual_address(pages);
         ptr = get_next_avail(1);
         page_map(page_directory, vptr, ptr);
 
-        printf("Page Address: %p\n", ptr);
-        printf("Virtual Address: %p\n\n", vptr);
+        printf("\nPage Address: %p\n", ptr);
+        printf("Virtual Address: %p\n", vptr);
 
         void *vpage = (vptr + PGSIZE);
         for(int i = 1; i < pages; i++, vpage += PGSIZE){
             void *page = get_next_avail(1);
             page_map(page_directory, vpage, page);
 
-            printf("Page Address: %p\n", page);
-            printf("Virtual Address: %p\n\n", vpage);
+            printf("\nPage Address: %p\n", page);
+            printf("Virtual Address: %p\n", vpage);
         }
     }
 
@@ -406,25 +408,24 @@ void t_free(void *va, int size) {
      *
      * Part 2: Also, remove the translation from the TLB
      */
-
-    printf("Virtual address: %p\n", va);
     int num_pages = 1;
     if(size > PGSIZE){
        num_pages = ((size % PGSIZE) == 0 ? (size / PGSIZE) : ((size / PGSIZE) + 1));
     }
+    printf("\nNum pages: %d\n", num_pages);
+    printf("Virtual address: %p\n", va);
 
-    //printf("NUM PAGES: %d\n", num_pages);
     void *current_va = va;
     int vpage_index = ((unsigned long)current_va >> OFFSET_BITS);
     for(int i = 0; i < num_pages; ++i){
         // Translate to get physical address
         pte_t *pte = translate(page_directory, current_va);
-        printf("Page table entry: %p\n\n", pte);
+        printf("Page table entry: %p\n", (void *)*pte);
         //printf("DEBUG: PTE at %p: %lu\n", current_va, (unsigned long)*pte);
 
-        if(pte){
+        if(*pte){
             // Get index of physical page
-            int page_index = ((char *)pte - phys_mem) / PGSIZE;
+            int page_index = ((char *)*pte - phys_mem) / PGSIZE;
 
             // Clear page table entry
             *pte = 0;

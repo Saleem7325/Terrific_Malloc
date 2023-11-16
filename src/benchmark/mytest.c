@@ -11,16 +11,25 @@
 // #define VBMAP_SIZE (VIRT_BITS % 8) == 0 ? (VIRT_BITS / 8) : ((VIRT_BITS / 8) + 1)
 
 int main() {
-    void *ptr = t_malloc(100);
-    void *ptr1 = t_malloc(100);
-    // void *ptr2 = t_malloc(100);
-    // void *ptr3 = t_malloc(100);
-    // void *ptr4 = t_malloc(100);
-    // void *ptr5 = t_malloc(100);
-    // void *ptr6 = t_malloc(10000);
+    void *ptr = t_malloc(10000);
+    t_free(ptr, 10000);
+    t_free(ptr, 10000);
 
-    t_free(ptr, 100);
+    void *ptr1 = t_malloc(100);
     t_free(ptr1, 100);
+
+    void *ptr2 = t_malloc(10000);
+    void *ptr3 = t_malloc(5000);
+    void *ptr4 = t_malloc(100);
+
+    t_free(ptr2, 10000);
+    t_free(ptr2, 100);
+
+    t_free(ptr3, 5000);
+    t_free(ptr3, 50);
+
+    t_free(ptr4, 100);
+    t_free(ptr4, 100);
 
     return 0;
 }
