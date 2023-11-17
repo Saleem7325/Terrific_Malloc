@@ -82,6 +82,8 @@ void free_all(){
 
     phys_mem = NULL;
     virt_bitmap = NULL;
+    page_count = 0;
+    table_count = 0;
 }
 
 /*
@@ -196,6 +198,8 @@ void set_physical_mem() {
     // Set first bit in bitmap since that is where page directory is being stored
     set_bit_at_index(page_bitmap, 0);
     table_count++; 
+    page_count = 0;
+    table_count = 0;
     // char *byte = &page_bitmap[0];
     // *byte = *byte | 1;
 
