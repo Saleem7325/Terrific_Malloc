@@ -36,6 +36,11 @@
 #define VBMAP_BYTES ((VBMAP_SIZE % 8) == 0 ? (VBMAP_SIZE / 8) : ((VBMAP_SIZE / 8) + 1))
 
 /*
+ * Number of bits in physical bitmap
+*/
+#define PBMAP_BITS (MEMSIZE / PGSIZE)
+
+/*
  * Number of chars to store in physical bitmap
 */
 #define PBMAP_SIZE ((MEMSIZE / PGSIZE) / 8)
@@ -171,7 +176,6 @@ void *virtual_address(int pages){
         set_bit_at_index(virt_bitmap, i);
     }
 
-    // int ofset = offset(pa);
     return (void *)(start_page <<  OFFSET_BITS);
 }
 
@@ -200,19 +204,17 @@ void set_physical_mem() {
     table_count++; 
     page_count = 0;
     table_count = 0;
-    // char *byte = &page_bitmap[0];
-    // *byte = *byte | 1;
 
     // Print config macros for debugging
-    printf("Number of entries: %d\n", NUM_ENTRIES);
-    printf("Offset bits: %ld\n", OFFSET_BITS);
-    printf("Page table bits: %ld\n", PT_BITS);
-    printf("Page directory bits: %ld\n", PD_BITS);
-    printf("Virtual bits: %ld\n", VIRT_BITS);
-    printf("Virtual bitmap bits: %ld\n", VBMAP_SIZE);
-    printf("Virtual bitmap bytes: %ld\n", VBMAP_SIZE);
-    printf("Page bitmap size: %d\n", PBMAP_SIZE);
-    printf("______________________________________\n");
+    // printf("Number of entries: %d\n", NUM_ENTRIES);
+    // printf("Offset bits: %ld\n", OFFSET_BITS);
+    // printf("Page table bits: %ld\n", PT_BITS);
+    // printf("Page directory bits: %ld\n", PD_BITS);
+    // printf("Virtual bits: %ld\n", VIRT_BITS);
+    // printf("Virtual bitmap bits: %ld\n", VBMAP_SIZE);
+    // printf("Virtual bitmap bytes: %ld\n", VBMAP_SIZE);
+    // printf("Page bitmap size: %d\n", PBMAP_SIZE);
+    // printf("______________________________________\n");
 }
 
 
@@ -447,20 +449,77 @@ void t_free(void *va, int size) {
     
 }
 
+int bytes_till_next_page(void *pa){
+    unsigned long int page_index = ((char *)pa - phys_mem) / PGSIZE;
+    if(page_index++  >= PBMAP_BITS){
+        return -1;
+    }
+
+    void *next_page = ((char *)phys_mem + (PGSIZE * page_index)) - 1;
+    int bytes = next_page - pa;
+
+    return bytes;
+}
+
+void *create_pyhsical_addr(void *va, void *pa){
+    return (void *)((char *)pa + ((long unsigned int)va & ((1 << OFFSET_BITS) - 1)));
+}
+
 
 /* The function copies data pointed by "val" to physical
  * memory pages using virtual address (va)
  * The function returns 0 if the put is successfull and -1 otherwise.
+ *
+ * HINT: Using the virtual address and translate(), find the physical page. Copy
+ * the contents of "val" to a physical page. NOTE: The "size" value can be larger 
+ * than one page. Therefore, you may have to find multiple pages using translate()
+ * function.   
 */
 int put_value(void *va, void *val, int size) {
+    // Check if virtual address is being used.
+    // printf("\nInside put_value\n");
+    int vmap_index = ((long unsigned int)va >> OFFSET_BITS);
+    if(!va || get_bit_at_index(virt_bitmap, vmap_index) == 0){
+        return -1;
+    }
 
-    /* HINT: Using the virtual address and translate(), find the physical page. Copy
-     * the contents of "val" to a physical page. NOTE: The "size" value can be larger 
-     * than one page. Therefore, you may have to find multiple pages using translate()
-     * function.
-     */
+    // Get physical address
+    pte_t *pte = translate(page_directory, va);
+    if(pte == NULL || !*pte){
+        return -1;
+    }
 
+    void *phys_addr = create_pyhsical_addr(va, (void *)*pte);
+    int page_bytes = bytes_till_next_page(phys_addr);
+    if(page_bytes == -1){
+        return -1;
+    }
 
+    int write_bytes = size;
+    char *src = val;
+    char *vaddr = va;
+
+    while(write_bytes > 0){
+        if(write_bytes <= page_bytes){
+            memcpy(phys_addr, src, write_bytes);
+            write_bytes -= write_bytes;
+        }else{
+            memcpy(phys_addr, src, page_bytes);
+            src = src + page_bytes + 1;
+            vaddr = va + page_bytes + 1;
+
+            pte = translate(page_directory, vaddr);
+            if(pte == NULL || !*pte){
+                return -1;
+            }
+
+            phys_addr = (void *)*pte;
+            write_bytes -= page_bytes;
+            page_bytes = PGSIZE - 1;
+        }
+    }
+
+    return 0;
     /*return -1 if put_value failed and 0 if put is successfull*/
 
 }
@@ -472,8 +531,49 @@ void get_value(void *va, void *val, int size) {
     /* HINT: put the values pointed to by "va" inside the physical memory at given
     * "val" address. Assume you can access "val" directly by derefencing them.
     */
+    // printf("\nInside get_value\n");
+    int vmap_index = ((long unsigned int)va >> OFFSET_BITS);
+    if(!va || get_bit_at_index(virt_bitmap, vmap_index) == 0){
+        return;
+    }
 
+    // Get physical address
+    pte_t *pte = translate(page_directory, va);
+    if(pte == NULL || !*pte){
+        return;
+    }
 
+    void *phys_addr = create_pyhsical_addr(va, (void *)*pte);
+    int page_bytes = bytes_till_next_page(phys_addr);
+    if(page_bytes == -1){
+        return;
+    }
+
+    int read_bytes = size;
+    char *dest = val;
+    char *vaddr = va;
+
+    while(read_bytes > 0){
+        if(read_bytes <= page_bytes){
+            memcpy(dest, phys_addr, read_bytes);
+            read_bytes -= read_bytes;
+        }else{
+            memcpy(dest, phys_addr, page_bytes);
+            dest = dest + page_bytes + 1;
+            vaddr = va + page_bytes + 1;
+
+            pte = translate(page_directory, vaddr);
+            if(pte == NULL || !*pte){
+                return;
+            }
+
+            phys_addr = (void *)*pte;
+            read_bytes -= page_bytes;
+            page_bytes = PGSIZE - 1;
+        }
+    }
+
+    return;
 }
 
 

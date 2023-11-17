@@ -12,21 +12,30 @@
 
 int main() {
 
-    // 1) Double Free
-    void *ptr = t_malloc(10000);
-    t_free(ptr, 10000);
-    t_free(ptr, 10000);
+    void *ptr[50];
+    for(int i = 0; i < 1; i++){
+        ptr[i] = t_malloc(1000);
+    }
+
+    int ordered[10];
+    for(int i = 0; i < 10; i++){
+        ordered[i] = 2*i;
+    }
+
+    put_value(ptr[0], &ordered, sizeof(int) * 10);
+
+    int recv[10];
+    get_value(ptr[0], &recv, sizeof(int) * 10);
+
+    for(int i = 0; i < 10; i++){
+        printf("%d\n", recv[i]);
+    }
+
+    for(int i = 0; i < 1; i++){
+        t_free(ptr[i], 1000);
+    }
 
 
-    printf("\nTest 2_____________________________________________\n");
-    t_free((void *)0xffc6b010, 100);
-
-    printf("\nTest 3_____________________________________________\n");
-    void *ptr5 = t_malloc(10);
-    void *ptr6 = t_malloc(10);
-
-    t_free(ptr5, 5000);
-    t_free(ptr6, 10);
 
 
     return 0;
