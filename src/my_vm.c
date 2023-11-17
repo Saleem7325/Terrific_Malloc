@@ -34,7 +34,6 @@
  * Number of chars to store in virtual bitmap
 */
 #define VBMAP_BYTES ((VBMAP_SIZE % 8) == 0 ? (VBMAP_SIZE / 8) : ((VBMAP_SIZE / 8) + 1))
-// #define VBMAP_SIZE (VIRT_BITS % 8) == 0 ? (VIRT_BITS / 8) : ((VIRT_BITS / 8) + 1)
 
 /*
  * Number of chars to store in physical bitmap
@@ -58,6 +57,16 @@ char page_bitmap[PBMAP_SIZE];
 char *virt_bitmap;
 
 /*
+ * Number of Pages tables/directories in memory
+*/
+int table_count;
+
+/*
+ * Number of user allocated pages
+*/
+unsigned long int page_count;
+
+/*
  * Pointer to Page Directory in phys_mem (points to start of phys_mem).
  * First page in memory is allocated to page directory.
 */
@@ -66,6 +75,14 @@ pde_t *page_directory;
 void *get_next_avail(int num_pages);
 
 /*__________________ HELPER FUNCTIONS __________________*/
+
+void free_all(){
+    free(phys_mem);
+    free(virt_bitmap);
+
+    phys_mem = NULL;
+    virt_bitmap = NULL;
+}
 
 /*
  * For validating/checking page_bitmap
@@ -177,7 +194,8 @@ void set_physical_mem() {
     set_bit_at_index(virt_bitmap, 0);
 
     // Set first bit in bitmap since that is where page directory is being stored
-    set_bit_at_index(page_bitmap, 0); 
+    set_bit_at_index(page_bitmap, 0);
+    table_count++; 
     // char *byte = &page_bitmap[0];
     // *byte = *byte | 1;
 
@@ -279,7 +297,11 @@ int page_map(pde_t *pgdir, void *va, void *pa) {
 
     if(!page_table){
         void *pt = get_next_avail(1);
+        if(!pt){
+            return -1;
+        }
         memset(pt, '\0', PGSIZE);
+        table_count++;
 
         pgdir[pd_index] = (pde_t)pt;
         page_table = (pte_t *)pgdir[pd_index];
@@ -340,106 +362,83 @@ void *get_next_avail(int num_pages) {
 and used by the benchmark
 */
 void *t_malloc(unsigned int num_bytes) {
-    /* 
-    * HINT: If the physical memory is not yet initialized, then allocate and initialize.
-    */
-
-    /* 
-    * HINT: If the page directory is not initialized, then initialize the
-    * page directory. Next, using get_next_avail(), check if there are free pages. If
-    * free pages are available, set the bitmaps and map a new page. Note, you will 
-    * have to mark which physical pages are used. 
-    */
     if(!phys_mem){
         set_physical_mem();
     }
 
-    void *ptr;
-    void *vptr;
     int pages = 1;
-
-    if(num_bytes < PGSIZE){
-        vptr = virtual_address(pages);
-        ptr = get_next_avail(pages);
-        page_map(page_directory, vptr, ptr);
-
-        printf("\nPage Address: %p\n", ptr);
-        printf("Virtual Address: %p\n", vptr);
-    }else{
+    if(num_bytes > PGSIZE){
         pages = (num_bytes % PGSIZE) == 0 ? (num_bytes / PGSIZE) : ((num_bytes / PGSIZE) + 1);
-        vptr = virtual_address(pages);
-        ptr = get_next_avail(1);
-        page_map(page_directory, vptr, ptr);
-
-        printf("\nPage Address: %p\n", ptr);
-        printf("Virtual Address: %p\n", vptr);
-
-        void *vpage = (vptr + PGSIZE);
-        for(int i = 1; i < pages; i++, vpage += PGSIZE){
-            void *page = get_next_avail(1);
-            page_map(page_directory, vpage, page);
-
-            printf("\nPage Address: %p\n", page);
-            printf("Virtual Address: %p\n", vpage);
-        }
     }
+    printf("\nNum pages: %d\n", pages);
 
-    if(!ptr || !vptr){
+    unsigned long int total_pages = table_count + page_count;
+    if(total_pages + pages > MEMSIZE){
+        fprintf(stderr, "Error: Not enough free memory\n");
         return NULL;
     }
 
+    void *vptr = virtual_address(pages);
+    void *vpage = vptr;
+    for(int i = 0; i < pages; i++, vpage += PGSIZE){
+        void *page = get_next_avail(1);
+        if(!page){
+            fprintf(stderr, "Error: Could not allocate page\n");
+            return NULL;
+        }
+
+        page_map(page_directory, vpage, page);
+        page_count++;
+        printf("Mapping: (va : pa) %p : %p\n", vpage, page);
+    }
+
     return vptr;
-    //TODO: MAP every page.
-    // void *vptr = virtual_address(ptr, pages);
-    // int ret = page_map(page_directory, vptr, ptr);
-    // while(ret == -1){
-    //     vptr = virtual_address(ptr, pages);
-    //     ret = page_map(page_directory, vptr, ptr);
-    // }
 }
 
 /* Responsible for releasing one or more memory pages using virtual address (va)
 */
 void t_free(void *va, int size) {
+    if(!phys_mem){
+        fprintf(stderr, "\nError: Attempting to free an unallocated page at %p\n", va);
+        return;
+    }
 
-    /* Part 1: Free the page table entries starting from this virtual address
-     * (va). Also mark the pages free in the bitmap. Perform free only if the 
-     * memory from "va" to va+size is valid.
-     *
-     * Part 2: Also, remove the translation from the TLB
-     */
     int num_pages = 1;
     if(size > PGSIZE){
        num_pages = ((size % PGSIZE) == 0 ? (size / PGSIZE) : ((size / PGSIZE) + 1));
     }
     printf("\nNum pages: %d\n", num_pages);
-    printf("Virtual address: %p\n", va);
 
     void *current_va = va;
     int vpage_index = ((unsigned long)current_va >> OFFSET_BITS);
     for(int i = 0; i < num_pages; ++i){
         // Translate to get physical address
         pte_t *pte = translate(page_directory, current_va);
-        printf("Page table entry: %p\n", (void *)*pte);
-        //printf("DEBUG: PTE at %p: %lu\n", current_va, (unsigned long)*pte);
-
+        if(pte == NULL){
+            fprintf(stderr, "Address: %p not found\n", current_va);
+            return;
+        }
+        
         if(*pte){
             // Get index of physical page
             int page_index = ((char *)*pte - phys_mem) / PGSIZE;
-
-            // Clear page table entry
+            printf("Freeing (va : pa) %p : %p\n", current_va, (void *)*pte);
             *pte = 0;
 
-            // Clear bit in physical bitmap
             clear_bit_at_index(page_bitmap, page_index);
             clear_bit_at_index(virt_bitmap, vpage_index++);
-            // TODO: Clear bit in virtual bitmap 
-            // Move to next page
+            page_count--;
+
             current_va = (void *)((char *)current_va + PGSIZE);
         } else {
             // Handle error: Trying to free an unallocated page
             fprintf(stderr, "Error: Attempting to free an unallocated page at %p\n", current_va);
+            break;
         }
+    }
+
+    if(page_count == 0){
+        free_all();
     }
     
 }
