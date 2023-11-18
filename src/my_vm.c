@@ -443,7 +443,7 @@ void t_free(void *va, int size) {
         }
     }
 
-    if(page_count == 0){
+    if(page_count == 0 && phys_mem != NULL){
         free_all();
     }
     
