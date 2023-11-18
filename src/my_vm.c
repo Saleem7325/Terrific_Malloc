@@ -87,6 +87,7 @@ void free_all(){
 
     phys_mem = NULL;
     virt_bitmap = NULL;
+    page_directory = NULL;
     page_count = 0;
     table_count = 0;
 }
@@ -201,10 +202,9 @@ void set_physical_mem() {
 
     // Set first bit in bitmap since that is where page directory is being stored
     set_bit_at_index(page_bitmap, 0);
-    table_count++; 
     page_count = 0;
     table_count = 0;
-
+    table_count++; 
     // Print config macros for debugging
     // printf("Number of entries: %d\n", NUM_ENTRIES);
     // printf("Offset bits: %ld\n", OFFSET_BITS);
@@ -376,7 +376,7 @@ void *t_malloc(unsigned int num_bytes) {
     if(num_bytes > PGSIZE){
         pages = (num_bytes % PGSIZE) == 0 ? (num_bytes / PGSIZE) : ((num_bytes / PGSIZE) + 1);
     }
-    printf("\nNum pages: %d\n", pages);
+    // printf("\nNum pages: %d\n", pages);
 
     unsigned long int total_pages = table_count + page_count;
     if(total_pages + pages > MEMSIZE){
@@ -395,7 +395,7 @@ void *t_malloc(unsigned int num_bytes) {
 
         page_map(page_directory, vpage, page);
         page_count++;
-        printf("Mapping: (va : pa) %p : %p\n", vpage, page);
+        // printf("Mapping: (va : pa) %p : %p\n", vpage, page);
     }
 
     return vptr;
@@ -413,7 +413,7 @@ void t_free(void *va, int size) {
     if(size > PGSIZE){
        num_pages = ((size % PGSIZE) == 0 ? (size / PGSIZE) : ((size / PGSIZE) + 1));
     }
-    printf("\nNum pages: %d\n", num_pages);
+    // printf("\nNum pages: %d\n", num_pages);
 
     void *current_va = va;
     int vpage_index = ((unsigned long)current_va >> OFFSET_BITS);
@@ -428,7 +428,7 @@ void t_free(void *va, int size) {
         if(*pte){
             // Get index of physical page
             int page_index = ((char *)*pte - phys_mem) / PGSIZE;
-            printf("Freeing (va : pa) %p : %p\n", current_va, (void *)*pte);
+            // printf("Freeing (va : pa) %p : %p\n", current_va, (void *)*pte);
             *pte = 0;
 
             clear_bit_at_index(page_bitmap, page_index);

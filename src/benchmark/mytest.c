@@ -7,15 +7,26 @@
 #define NUMS 2048
 #define PTRS 10
 
+#define SIZE 5
+#define ARRAY_SIZE 400
 
 
-// #define NUM_ENTRIES (PGSIZE / sizeof(pde_t))
-// #define OFFSET_BITS ((unsigned long)log2f(PGSIZE))
-// #define PT_BITS  (((sizeof(pde_t) * 8) - OFFSET_BITS) / 2)
-// #define PD_BITS (((sizeof(pde_t) * 8) - OFFSET_BITS) % 2) + PT_BITS
-// #define VIRT_BITS (PT_BITS + PD_BITS)
-// #define VBMAP_SIZE (VIRT_BITS % 8) == 0 ? (VIRT_BITS / 8) : ((VIRT_BITS / 8) + 1)
+void print_matrix(void *matrix){
+    int address_a = 0; 
+    int address_b = 0;
+    int address_c = 0;
+    int y;
 
+    for(int i = 0; i < SIZE; i++) {
+        for(int j = 0; j < SIZE; j++) {
+            address_a = (unsigned int)matrix + ((i * SIZE * sizeof(int))) + (j * sizeof(int));
+            get_value((void *)address_a, &y, sizeof(int));
+            printf("%d ", y);
+        }
+        printf("\n");
+    }
+    printf("\n"); 
+}
 int main() {
     void *ptr[PTRS];
 
@@ -41,6 +52,7 @@ int main() {
     for(int i = 0; i < PTRS; i++){
         get_value(ptr[i], recv, sizeof(int) * NUMS);
         printf("%d\n", recv[NUMS - 1]);
+        memset(recv, '\0', sizeof(int) * NUMS);
     }
 
     for(int i = 0; i < PTRS; i++){
@@ -81,6 +93,36 @@ int main() {
 
     free(recv);
     free(ordered);
+
+    printf("\n__________________________Matrix Test 1_____________________________\n");
+    void *a = t_malloc(ARRAY_SIZE);
+    void *b = t_malloc(ARRAY_SIZE);
+    
+    void *c = t_malloc(ARRAY_SIZE);
+    int x = 1; int s = 2; int y, z; int i =0, j=0;
+    int address_a = 0, address_b = 0;
+    int address_c = 0;
+
+    for (i = 0; i < SIZE; i++) {
+        for (j = 0; j < SIZE; j++) {
+            address_a = (unsigned int)a + ((i * SIZE * sizeof(int))) + (j * sizeof(int));
+            address_b = (unsigned int)b + ((i * SIZE * sizeof(int))) + (j * sizeof(int));
+            
+            s += 2;
+            put_value((void *)address_a, &s, sizeof(int));
+            put_value((void *)address_b, &x, sizeof(int));
+        }
+    }
+
+    print_matrix(a);
+    print_matrix(b); 
+    mat_mult(a, b, SIZE, c);
+    print_matrix(c);
+
+
+    t_free(a, ARRAY_SIZE);
+    t_free(b, ARRAY_SIZE);
+    t_free(c, ARRAY_SIZE);
 
     return 0;
 }
