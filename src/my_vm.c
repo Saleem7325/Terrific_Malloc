@@ -77,6 +77,10 @@ unsigned long int page_count;
 */
 pde_t *page_directory;
 
+pthread_mutex_t mutex;
+int lock_initialized = 0;
+int wait_count = 0; 
+
 void *get_next_avail(int num_pages);
 
 /*__________________ HELPER FUNCTIONS __________________*/
@@ -84,12 +88,15 @@ void *get_next_avail(int num_pages);
 void free_all(){
     free(phys_mem);
     free(virt_bitmap);
+    pthread_mutex_destroy(&mutex);
 
     phys_mem = NULL;
     virt_bitmap = NULL;
     page_directory = NULL;
     page_count = 0;
     table_count = 0;
+    wait_count = 0;
+    lock_initialized = 0;
 }
 
 /*
@@ -169,6 +176,7 @@ void *virtual_address(int pages){
 
     // Not enough continuous pages available
     if(free_pages < pages){
+        fprintf(stderr, "Error: not enough contiguous virtual bits\n");
         return NULL;
     }
     
@@ -186,8 +194,10 @@ void *virtual_address(int pages){
  * Function responsible for allocating and setting your physical memory 
 */
 void set_physical_mem() {
+    // pthread_mutex_init(&mutex, NULL);
+
     // Create physical memory 
-    // Initialize page bitmap 
+    // Initialize page bitmap
     phys_mem = (char *)malloc(MEMSIZE);
     memset(page_bitmap, '\0', PBMAP_SIZE);
 
@@ -304,6 +314,7 @@ int page_map(pde_t *pgdir, void *va, void *pa) {
     if(!page_table){
         void *pt = get_next_avail(1);
         if(!pt){
+            fprintf(stderr, "Error: Could not allocate block for page table\n");
             return -1;
         }
         memset(pt, '\0', PGSIZE);
@@ -367,10 +378,29 @@ void *get_next_avail(int num_pages) {
 /* Function responsible for allocating pages
 and used by the benchmark
 */
+    // if(lock_initialized){
+    //     wait_count++;
+    //     pthread_mutex_lock(&mutex);
+    //     wait_count--;
+    // }else{
+    //     pthread_mutex_init(&mutex, NULL);
+    //     lock_initialized = 1;
+    //     pthread_mutex_lock(&mutex);
+    // }
 void *t_malloc(unsigned int num_bytes) {
+    if(lock_initialized == 0){
+        pthread_mutex_init(&mutex, NULL);
+        lock_initialized = 1;
+    }
+
+    wait_count++;
+    pthread_mutex_lock(&mutex);
+    wait_count--;
+
     if(!phys_mem){
         set_physical_mem();
     }
+
 
     int pages = 1;
     if(num_bytes > PGSIZE){
@@ -381,15 +411,22 @@ void *t_malloc(unsigned int num_bytes) {
     unsigned long int total_pages = table_count + page_count;
     if(total_pages + pages > MEMSIZE){
         fprintf(stderr, "Error: Not enough free memory\n");
+        pthread_mutex_unlock(&mutex);
         return NULL;
     }
 
     void *vptr = virtual_address(pages);
+    if(!vptr){
+        fprintf(stderr, "Error: virtual_address() returned null\n");
+        pthread_mutex_unlock(&mutex);
+        return NULL;
+    }
     void *vpage = vptr;
     for(int i = 0; i < pages; i++, vpage += PGSIZE){
         void *page = get_next_avail(1);
         if(!page){
             fprintf(stderr, "Error: Could not allocate page\n");
+            pthread_mutex_unlock(&mutex);
             return NULL;
         }
 
@@ -398,16 +435,27 @@ void *t_malloc(unsigned int num_bytes) {
         // printf("Mapping: (va : pa) %p : %p\n", vpage, page);
     }
 
+    pthread_mutex_unlock(&mutex);
     return vptr;
 }
 
 /* Responsible for releasing one or more memory pages using virtual address (va)
 */
 void t_free(void *va, int size) {
-    if(!phys_mem){
+    if(lock_initialized){
+        wait_count++;
+        pthread_mutex_lock(&mutex);
+        wait_count--;
+    }else{
+        fprintf(stderr, "\nError: Lock not initialized\n");
+        return;
+    }
+
+    if(!phys_mem || !va){
         fprintf(stderr, "\nError: Attempting to free an unallocated page at %p\n", va);
         return;
     }
+
 
     int num_pages = 1;
     if(size > PGSIZE){
@@ -422,6 +470,7 @@ void t_free(void *va, int size) {
         pte_t *pte = translate(page_directory, current_va);
         if(pte == NULL){
             fprintf(stderr, "Address: %p not found\n", current_va);
+            pthread_mutex_unlock(&mutex);
             return;
         }
         
@@ -443,9 +492,13 @@ void t_free(void *va, int size) {
         }
     }
 
-    if(page_count == 0 && phys_mem != NULL){
+    if(page_count == 0 && wait_count == 0 && phys_mem != NULL){
+        pthread_mutex_unlock(&mutex);
         free_all();
+    }else{
+        pthread_mutex_unlock(&mutex);
     }
+
     
 }
 
