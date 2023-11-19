@@ -410,7 +410,7 @@ void *t_malloc(unsigned int num_bytes) {
 
     unsigned long int total_pages = table_count + page_count;
     if(total_pages + pages > MEMSIZE){
-        fprintf(stderr, "Error: Not enough free memory\n");
+        fprintf(stderr, "Error: Not enough free memory with %ld pages in use\nPage count: %ld\nTable count: %d\n", total_pages, page_count, table_count);
         pthread_mutex_unlock(&mutex);
         return NULL;
     }
@@ -482,7 +482,8 @@ void t_free(void *va, int size) {
 
             clear_bit_at_index(page_bitmap, page_index);
             clear_bit_at_index(virt_bitmap, vpage_index++);
-            page_count--;
+            page_count = page_count > 0 ? page_count - 1 : 0;
+            // page_count--;
 
             current_va = (void *)((char *)current_va + PGSIZE);
         } else {
@@ -531,20 +532,32 @@ void *create_pyhsical_addr(void *va, void *pa){
 int put_value(void *va, void *val, int size) {
     // Check if virtual address is being used.
     // printf("\nInside put_value\n");
+    if(lock_initialized){
+        wait_count++;
+        pthread_mutex_lock(&mutex);
+        wait_count--;
+    }else{
+        fprintf(stderr, "\nError: Lock not initialized\n");
+        return -1;
+    }
+
     int vmap_index = ((long unsigned int)va >> OFFSET_BITS);
     if(!va || get_bit_at_index(virt_bitmap, vmap_index) == 0){
+        pthread_mutex_unlock(&mutex);
         return -1;
     }
 
     // Get physical address
     pte_t *pte = translate(page_directory, va);
     if(pte == NULL || !*pte){
+        pthread_mutex_unlock(&mutex);
         return -1;
     }
 
     void *phys_addr = create_pyhsical_addr(va, (void *)*pte);
     int page_bytes = bytes_till_next_page(phys_addr);
     if(page_bytes == -1){
+        pthread_mutex_unlock(&mutex);
         return -1;
     }
 
@@ -563,6 +576,7 @@ int put_value(void *va, void *val, int size) {
 
             pte = translate(page_directory, vaddr);
             if(pte == NULL || !*pte){
+                pthread_mutex_unlock(&mutex);
                 return -1;
             }
 
@@ -572,6 +586,7 @@ int put_value(void *va, void *val, int size) {
         }
     }
 
+    pthread_mutex_unlock(&mutex);
     return 0;
     /*return -1 if put_value failed and 0 if put is successfull*/
 
@@ -585,20 +600,32 @@ void get_value(void *va, void *val, int size) {
     * "val" address. Assume you can access "val" directly by derefencing them.
     */
     // printf("\nInside get_value\n");
+    if(lock_initialized){
+        wait_count++;
+        pthread_mutex_lock(&mutex);
+        wait_count--;
+    }else{
+        fprintf(stderr, "\nError: Lock not initialized\n");
+        return;
+    }
+
     int vmap_index = ((long unsigned int)va >> OFFSET_BITS);
     if(!va || get_bit_at_index(virt_bitmap, vmap_index) == 0){
+        pthread_mutex_unlock(&mutex);
         return;
     }
 
     // Get physical address
     pte_t *pte = translate(page_directory, va);
     if(pte == NULL || !*pte){
+        pthread_mutex_unlock(&mutex);
         return;
     }
 
     void *phys_addr = create_pyhsical_addr(va, (void *)*pte);
     int page_bytes = bytes_till_next_page(phys_addr);
     if(page_bytes == -1){
+        pthread_mutex_unlock(&mutex);
         return;
     }
 
@@ -617,6 +644,7 @@ void get_value(void *va, void *val, int size) {
 
             pte = translate(page_directory, vaddr);
             if(pte == NULL || !*pte){
+                pthread_mutex_unlock(&mutex);
                 return;
             }
 
@@ -626,6 +654,7 @@ void get_value(void *va, void *val, int size) {
         }
     }
 
+    pthread_mutex_unlock(&mutex);
     return;
 }
 
