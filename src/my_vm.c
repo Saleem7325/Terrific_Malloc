@@ -83,8 +83,6 @@ pthread_mutex_t mutex;
 int lock_initialized = 0;
 int wait_count = 0; 
 
-
-
 pthread_mutex_t tlb_mutex;
 int tlb_lock_initialized = 0;
 
@@ -231,17 +229,16 @@ void set_physical_mem() {
     table_count++; 
 
     //TLB INITIALIZATION
-
     for (int i = 0; i < TLB_ENTRIES; i++) {
         tlb_store.entries[i].va = 0;
         tlb_store.entries[i].pa = 0;
         tlb_store.entries[i].valid = false;
     }
 
-    if (!tlb_lock_initialized) {
-        pthread_mutex_init(&tlb_mutex, NULL);
-        tlb_lock_initialized = 1;
-    }
+    // if (!tlb_lock_initialized) {
+    //     pthread_mutex_init(&tlb_mutex, NULL);
+    //     tlb_lock_initialized = 1;
+    // }
 
     // Initialize global variables for TLB hits and misses
     tlb_hit = 0;
@@ -262,7 +259,7 @@ int add_TLB(void *va, void *pa) {
         return -1;
     }
 
-    pthread_mutex_lock(&tlb_mutex);
+    // pthread_mutex_lock(&tlb_mutex);
     unsigned long vpn = (unsigned long)va >> OFFSET_BITS;
     int index = vpn % TLB_ENTRIES;
 
@@ -279,7 +276,7 @@ int add_TLB(void *va, void *pa) {
     tlb_store.entries[index].valid = true;
 
     //printf("Adding to TLB: VA: %p, PA: %p, Index: %d\n", va, pa, index);
-    pthread_mutex_unlock(&tlb_mutex);
+    // pthread_mutex_unlock(&tlb_mutex);
     // Successful addition
     return 0;  
 }
@@ -298,7 +295,7 @@ pte_t *check_TLB(void *va) {
         return NULL;
     }
 
-    pthread_mutex_lock(&tlb_mutex);
+    // pthread_mutex_lock(&tlb_mutex);
     unsigned long vpn = (unsigned long)va >> OFFSET_BITS;
     int index = vpn % TLB_ENTRIES;
 
@@ -315,7 +312,7 @@ pte_t *check_TLB(void *va) {
     //miss update
     tlb_miss++;
     //printf("TLB Miss for VA: %p, Returning NULL\n", va);
-    pthread_mutex_unlock(&tlb_mutex);
+    // pthread_mutex_unlock(&tlb_mutex);
     return NULL;
 
    /*This function should return a pte_t pointer*/
@@ -400,8 +397,6 @@ int page_map(pde_t *pgdir, void *va, void *pa) {
     pte_t *entry = &page_table[pt_index];
     if(entry && *entry == 0){
         *entry = (pte_t)pa;
-        //Add the mapping to tlb
-        add_TLB(va, pa);
     }else{
         // Entry is present
         return -1;
@@ -453,15 +448,6 @@ void *get_next_avail(int num_pages) {
 /* Function responsible for allocating pages
 and used by the benchmark
 */
-    // if(lock_initialized){
-    //     wait_count++;
-    //     pthread_mutex_lock(&mutex);
-    //     wait_count--;
-    // }else{
-    //     pthread_mutex_init(&mutex, NULL);
-    //     lock_initialized = 1;
-    //     pthread_mutex_lock(&mutex);
-    // }
 void *t_malloc(unsigned int num_bytes) {
     if(lock_initialized == 0){
         pthread_mutex_init(&mutex, NULL);

@@ -28,14 +28,12 @@ typedef unsigned long pde_t;
 
 #define TLB_ENTRIES 512
 
-
 // Structure representing a TLB entry
 struct tlb_entry {
     unsigned long va;
     unsigned long pa;  
     bool valid;        
 };
-
 
 //Structure to represents TLB
 struct tlb {
@@ -47,10 +45,8 @@ struct tlb {
 
 };
 
-
-
 extern struct tlb tlb_store;
-extern pde_t *page_directory;
+// extern pde_t *page_directory;
 
 void set_physical_mem();
 pte_t* translate(pde_t *pgdir, void *va);
