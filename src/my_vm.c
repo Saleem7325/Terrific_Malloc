@@ -45,6 +45,8 @@
 */
 #define PBMAP_SIZE ((MEMSIZE / PGSIZE) / 8)
 
+
+
 /*
  * Physical memory
 */
@@ -81,6 +83,16 @@ pthread_mutex_t mutex;
 int lock_initialized = 0;
 int wait_count = 0; 
 
+
+
+pthread_mutex_t tlb_mutex;
+int tlb_lock_initialized = 0;
+
+double tlb_hit = 0;
+double tlb_miss = 0;
+
+struct tlb tlb_store;
+
 void *get_next_avail(int num_pages);
 
 /*__________________ HELPER FUNCTIONS __________________*/
@@ -89,6 +101,7 @@ void free_all(){
     free(phys_mem);
     free(virt_bitmap);
     pthread_mutex_destroy(&mutex);
+    pthread_mutex_destroy(&tlb_mutex);
 
     phys_mem = NULL;
     virt_bitmap = NULL;
@@ -97,6 +110,7 @@ void free_all(){
     table_count = 0;
     wait_count = 0;
     lock_initialized = 0;
+    tlb_lock_initialized = 0;
 }
 
 /*
@@ -215,16 +229,24 @@ void set_physical_mem() {
     page_count = 0;
     table_count = 0;
     table_count++; 
-    // Print config macros for debugging
-    // printf("Number of entries: %d\n", NUM_ENTRIES);
-    // printf("Offset bits: %ld\n", OFFSET_BITS);
-    // printf("Page table bits: %ld\n", PT_BITS);
-    // printf("Page directory bits: %ld\n", PD_BITS);
-    // printf("Virtual bits: %ld\n", VIRT_BITS);
-    // printf("Virtual bitmap bits: %ld\n", VBMAP_SIZE);
-    // printf("Virtual bitmap bytes: %ld\n", VBMAP_SIZE);
-    // printf("Page bitmap size: %d\n", PBMAP_SIZE);
-    // printf("______________________________________\n");
+
+    //TLB INITIALIZATION
+
+    for (int i = 0; i < TLB_ENTRIES; i++) {
+        tlb_store.entries[i].va = 0;
+        tlb_store.entries[i].pa = 0;
+        tlb_store.entries[i].valid = false;
+    }
+
+    if (!tlb_lock_initialized) {
+        pthread_mutex_init(&tlb_mutex, NULL);
+        tlb_lock_initialized = 1;
+    }
+
+    // Initialize global variables for TLB hits and misses
+    tlb_hit = 0;
+    tlb_miss = 0;
+    
 }
 
 
@@ -235,8 +257,31 @@ void set_physical_mem() {
 int add_TLB(void *va, void *pa) {
 
     /*Part 2 HINT: Add a virtual to physical page translation to the TLB */
+    if (va == NULL || pa == NULL) {
+        fprintf(stderr, "Error: NULL address provided to add_TLB\n");
+        return -1;
+    }
 
-    return -1;
+    pthread_mutex_lock(&tlb_mutex);
+    unsigned long vpn = (unsigned long)va >> OFFSET_BITS;
+    int index = vpn % TLB_ENTRIES;
+
+    // Check if we are about to overwrite an existing valid entry
+    // if (tlb_store.entries[index].valid) {
+    //     fprintf(stderr, "Evicting TLB entry at index %d (VA: %p, PA: %p)\n", 
+    //         index, (void*)tlb_store.entries[index].va, (void*)tlb_store.entries[index].pa);
+    // }
+
+
+    // Store the full virtual and physical addresses
+    tlb_store.entries[index].va = (unsigned long)va;
+    tlb_store.entries[index].pa = (unsigned long)pa;
+    tlb_store.entries[index].valid = true;
+
+    //printf("Adding to TLB: VA: %p, PA: %p, Index: %d\n", va, pa, index);
+    pthread_mutex_unlock(&tlb_mutex);
+    // Successful addition
+    return 0;  
 }
 
 
@@ -248,8 +293,30 @@ int add_TLB(void *va, void *pa) {
 pte_t *check_TLB(void *va) {
 
     /* Part 2: TLB lookup code here */
+    if (va == NULL) {
+        fprintf(stderr, "Error: NULL address provided to check_TLB\n");
+        return NULL;
+    }
 
+    pthread_mutex_lock(&tlb_mutex);
+    unsigned long vpn = (unsigned long)va >> OFFSET_BITS;
+    int index = vpn % TLB_ENTRIES;
 
+    if (tlb_store.entries[index].valid && tlb_store.entries[index].va == (unsigned long)va) {
+        //got a hit update
+        tlb_hit++;  
+        //preserve its address
+        static pte_t pa;  
+        pa = tlb_store.entries[index].pa;
+        //printf("TLB Hit for VA: %p, Returning PA: %p\n", va, pa);
+        pthread_mutex_unlock(&tlb_mutex);
+        return &pa;
+    }
+    //miss update
+    tlb_miss++;
+    //printf("TLB Miss for VA: %p, Returning NULL\n", va);
+    pthread_mutex_unlock(&tlb_mutex);
+    return NULL;
 
    /*This function should return a pte_t pointer*/
 }
@@ -260,12 +327,12 @@ pte_t *check_TLB(void *va) {
  * Feel free to extend the function arguments or return type.
  */
 void print_TLB_missrate() {
-    double miss_rate = 0;	
-
+    	
+    double miss_rate = 0;
     /*Part 2 Code here to calculate and print the TLB miss rate*/
-
-
-
+    if (tlb_hit + tlb_miss > 0) {
+        miss_rate = tlb_miss / (tlb_hit + tlb_miss);
+    }
 
     fprintf(stderr, "TLB miss rate %lf \n", miss_rate);
 }
@@ -282,21 +349,27 @@ pte_t *translate(pde_t *pgdir, void *va) {
     * Part 2 HINT: Check the TLB before performing the translation. If
     * translation exists, then you can return physical address from the TLB.
     */
+    pte_t *pte_from_tlb = check_TLB(va);
+    
+    if (pte_from_tlb != NULL) {
+        // TLB hit
+        //printf("TLB provided PA: %p for VA: %p\n", (void *)*pte_from_tlb, va);
+        return pte_from_tlb;
+    }
+    // TLB miss
     int pd_index = page_directory_index(va);
     int pt_index = page_table_index(va);
     pde_t *page_table = (pde_t *)pgdir[pd_index];
 
-    if(page_table != NULL){
-        // pte_t *entry = (pte_t *)page_table[pt_index];
+    if (page_table != NULL) {
         pte_t *entry = (pte_t *)&page_table[pt_index];
-
-        if(entry != NULL){
+        if (entry != NULL && *entry != 0) {
+            // Add to TLB
+            add_TLB(va, (void *)(*entry));
             return entry;
         }
     }
-
-    //If translation not successful, then return NULL
-    return NULL; 
+    return NULL; // Translation not found
 }
 
 
@@ -327,6 +400,8 @@ int page_map(pde_t *pgdir, void *va, void *pa) {
     pte_t *entry = &page_table[pt_index];
     if(entry && *entry == 0){
         *entry = (pte_t)pa;
+        //Add the mapping to tlb
+        add_TLB(va, pa);
     }else{
         // Entry is present
         return -1;
@@ -549,6 +624,7 @@ int put_value(void *va, void *val, int size) {
 
     // Get physical address
     pte_t *pte = translate(page_directory, va);
+
     if(pte == NULL || !*pte){
         pthread_mutex_unlock(&mutex);
         return -1;

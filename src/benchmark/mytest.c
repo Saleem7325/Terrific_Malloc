@@ -3,126 +3,89 @@
 #include <stdio.h>
 #include "../my_vm.h"
 
-#define BYTES 8192
-#define NUMS 2048
-#define PTRS 10
-
-#define SIZE 5
-#define ARRAY_SIZE 400
-
-
-void print_matrix(void *matrix){
-    int address_a = 0; 
-    int address_b = 0;
-    int address_c = 0;
-    int y;
-
-    for(int i = 0; i < SIZE; i++) {
-        for(int j = 0; j < SIZE; j++) {
-            address_a = (unsigned int)matrix + ((i * SIZE * sizeof(int))) + (j * sizeof(int));
-            get_value((void *)address_a, &y, sizeof(int));
-            printf("%d ", y);
-        }
-        printf("\n");
-    }
-    printf("\n"); 
-}
 int main() {
-    void *ptr[PTRS];
+    // Initialize the virtual memory system
+    set_physical_mem();
 
-    // Allocate 2 pages for each pointer. Put 2 pages of ints in memory for each pointer.
-    // Get 2 pages of ints from memory for each pointer. Validate that last int is 2 * (NUMS - 1)
-    // for each pointer.
-    printf("__________________________Test 1_____________________________\n");
-    for(int i = 0; i < PTRS; i++){
-        ptr[i] = t_malloc( BYTES);
+    // Allocate a small block of memory
+    void *va = t_malloc(PGSIZE);
+    if (!va) {
+        fprintf(stderr, "Failed to allocate memory\n");
+        return -1;
     }
 
-    int *ordered = (int *)malloc(sizeof(int) * NUMS);
-    for(int i = 0; i < NUMS; i++){
-        ordered[i] = 2*i;
+    printf("Allocated virtual address: %p\n", va);
+
+    // Perform a translation (should result in a TLB miss initially)
+    pte_t *pte = translate(page_directory, va);
+    if (!pte) {
+        fprintf(stderr, "Translation failed\n");
+        return -1;
     }
+    printf("Initial translation: VA %p -> PA %p\n", va, (void*)(*pte));
 
-    for(int i = 0; i < PTRS; i++){
-        put_value(ptr[i], ordered, sizeof(int) * NUMS);
+    // Modify the memory (to trigger TLB update)
+    int value = 42;
+    if (put_value(va, &value, sizeof(value)) != 0) {
+        fprintf(stderr, "Failed to write to memory\n");
+        return -1;
     }
+    printf("Wrote %d to VA %p\n", value, va);
 
-    int *recv = (int *)malloc(sizeof(int) * NUMS);
-    printf("\n");
-    for(int i = 0; i < PTRS; i++){
-        get_value(ptr[i], recv, sizeof(int) * NUMS);
-        printf("%d\n", recv[NUMS - 1]);
-        memset(recv, '\0', sizeof(int) * NUMS);
+    // Perform another translation (should ideally result in a TLB hit)
+    pte = translate(page_directory, va);
+    if (!pte) {
+        fprintf(stderr, "Translation failed\n");
+        return -1;
     }
+    printf("Second translation: VA %p -> PA %p\n", va, (void*)(*pte));
 
-    for(int i = 0; i < PTRS; i++){
-        t_free(ptr[i], BYTES);
-    }
+    // Free the allocated memory
+    t_free(va, PGSIZE);
 
-    // Allocate 2 pages for each pointer. Put 1.5 pages of ints in memory at (virtual address + .5 pages)
-    // for each pointer. Get 1.5 pages of ints from memory at virtual address + .5 pages for each pointer.
-    // Ints are stored in recv, validate that ints at recv[count - 1] == count - 1 and recv[count] == 0.
-    printf("\n__________________________Test 2_____________________________\n");
-    for(int i = 0; i < PTRS; i++){
-        ptr[i] = t_malloc( BYTES);
-    }
-
-    int count = NUMS - (NUMS/4);
-    printf("\nCount: %d\n", count);
-    memset(ordered, '\0', sizeof(int) * NUMS);
-    for(int i = 0; i < count; i++){
-        ordered[i] = i;
-    }
-
-    for(int i = 0; i < PTRS; i++){
-        void * va = ((char *)ptr[i] + 2048);
-        put_value(va, ordered, BYTES - 2048);
-    }
-
-    memset(recv, '\0', sizeof(int) * NUMS);
-    for(int i = 0; i < PTRS; i++){
-        void *va = ((char *)ptr[i] + 2048);
-        get_value(va, recv, BYTES - 2048);
-        printf("%d - %d\n", recv[count - 1], recv[count]);
-        memset(recv, '\0', sizeof(int) * NUMS);
-    }
-
-    for(int i = 0; i < PTRS; i++){
-        t_free(ptr[i], BYTES);
-    }
-
-    free(recv);
-    free(ordered);
-
-    printf("\n__________________________Matrix Test 1_____________________________\n");
-    void *a = t_malloc(ARRAY_SIZE);
-    void *b = t_malloc(ARRAY_SIZE);
-    
-    void *c = t_malloc(ARRAY_SIZE);
-    int x = 1; int s = 2; int y, z; int i =0, j=0;
-    int address_a = 0, address_b = 0;
-    int address_c = 0;
-
-    for (i = 0; i < SIZE; i++) {
-        for (j = 0; j < SIZE; j++) {
-            address_a = (unsigned int)a + ((i * SIZE * sizeof(int))) + (j * sizeof(int));
-            address_b = (unsigned int)b + ((i * SIZE * sizeof(int))) + (j * sizeof(int));
-            
-            s += 2;
-            put_value((void *)address_a, &s, sizeof(int));
-            put_value((void *)address_b, &x, sizeof(int));
-        }
-    }
-
-    print_matrix(a);
-    print_matrix(b); 
-    mat_mult(a, b, SIZE, c);
-    print_matrix(c);
-
-
-    t_free(a, ARRAY_SIZE);
-    t_free(b, ARRAY_SIZE);
-    t_free(c, ARRAY_SIZE);
+    // Optionally, you can print the TLB miss rate here
+    print_TLB_missrate();
 
     return 0;
 }
+
+
+
+
+
+// int main() {
+//     // Initialize the physical memory and TLB
+//     set_physical_mem();
+
+//     // Allocate some memory
+//     void *addr1 = t_malloc(2500);
+//     if (!addr1) {
+//         fprintf(stderr, "Memory allocation failed\n");
+//         return -1;
+//     }
+
+//     // Write a value to the allocated memory
+//     int value = 12345;
+//     if (put_value(addr1, &value, sizeof(value)) != 0) {
+//         fprintf(stderr, "Failed to write to allocated memory\n");
+//         return -1;
+//     }
+
+//     // Read the value back from the allocated memory
+//     int read_value = 0;
+//     get_value(addr1, &read_value, sizeof(read_value));
+//     if (read_value != value) {
+//         fprintf(stderr, "Incorrect value read from memory. Expected %d, got %d\n", value, read_value);
+//         return -1;
+//     }
+
+//     // Print TLB miss rate
+//     print_TLB_missrate();
+
+//     // Free the allocated memory
+//     t_free(addr1, PGSIZE);
+
+//     // Optionally perform more operations to test the TLB under different scenarios
+
+//     return 0;
+// }

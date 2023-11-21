@@ -108,6 +108,7 @@ int main() {
     }
     int old = (int)pointers[0];
     printf("Gonna free everything in multiple threads!\n");
+    
     // ufree(pointers[0], alloc_size);
     //
     for (int i = 0; i < num_threads; i++)
@@ -122,6 +123,8 @@ int main() {
         temp = t_malloc(10);
         if ((int)temp == old) {
             printf("Free Worked!\n");
+            print_TLB_missrate();
+            
             flag = 1;
             break;
         }
