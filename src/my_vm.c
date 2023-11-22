@@ -200,6 +200,22 @@ void *virtual_address(int pages){
     return (void *)(start_page <<  OFFSET_BITS);
 }
 
+int bytes_till_next_page(void *pa) {
+    unsigned long int page_index = ((char *)pa - phys_mem) / PGSIZE;
+    if(page_index++  >= PBMAP_BITS){
+        return -1;
+    }
+
+    void *next_page = ((char *)phys_mem + (PGSIZE * page_index)) - 1;
+    int bytes = next_page - pa;
+
+    return bytes;
+}
+
+void *create_pyhsical_addr(void *va, void *pa){
+    return (void *)((char *)pa + ((long unsigned int)va & ((1 << OFFSET_BITS) - 1)));
+}
+
 /*__________________ VMEM FUNCTIONS __________________*/
 
 /*
@@ -230,6 +246,10 @@ void set_physical_mem() {
 
     //TLB INITIALIZATION
     memset(&(tlb_store.entries), '\0', sizeof(struct tlb_entry) * TLB_ENTRIES);
+
+    // Initialize global variables for TLB hits and misses
+    tlb_hit = 0;
+    tlb_miss = 0;
     // for (int i = 0; i < TLB_ENTRIES; i++) {
     //     tlb_store.entries[i].va = 0;
     //     tlb_store.entries[i].pa = 0;
@@ -239,12 +259,18 @@ void set_physical_mem() {
     // if (!tlb_lock_initialized) {
     //     pthread_mutex_init(&tlb_mutex, NULL);
     //     tlb_lock_initialized = 1;
-    // }
+    // } 
 
-    // Initialize global variables for TLB hits and misses
-    tlb_hit = 0;
-    tlb_miss = 0;
-    
+    // Print config macros for debugging
+    // printf("Number of entries: %d\n", NUM_ENTRIES);
+    // printf("Offset bits: %ld\n", OFFSET_BITS);
+    // printf("Page table bits: %ld\n", PT_BITS);
+    // printf("Page directory bits: %ld\n", PD_BITS);
+    // printf("Virtual bits: %ld\n", VIRT_BITS);
+    // printf("Virtual bitmap bits: %ld\n", VBMAP_SIZE);
+    // printf("Virtual bitmap bytes: %ld\n", VBMAP_SIZE);
+    // printf("Page bitmap size: %d\n", PBMAP_SIZE);
+    // printf("______________________________________\n");  
 }
 
 
@@ -289,7 +315,6 @@ int add_TLB(void *va, void *pa) {
  * Feel free to extend this function and change the return type.
  */
 pte_t *check_TLB(void *va) {
-
     /* Part 2: TLB lookup code here */
     if (va == NULL) {
         fprintf(stderr, "Error: NULL address provided to check_TLB\n");
@@ -565,23 +590,6 @@ void t_free(void *va, int size) {
 
     
 }
-
-int bytes_till_next_page(void *pa){
-    unsigned long int page_index = ((char *)pa - phys_mem) / PGSIZE;
-    if(page_index++  >= PBMAP_BITS){
-        return -1;
-    }
-
-    void *next_page = ((char *)phys_mem + (PGSIZE * page_index)) - 1;
-    int bytes = next_page - pa;
-
-    return bytes;
-}
-
-void *create_pyhsical_addr(void *va, void *pa){
-    return (void *)((char *)pa + ((long unsigned int)va & ((1 << OFFSET_BITS) - 1)));
-}
-
 
 /* The function copies data pointed by "val" to physical
  * memory pages using virtual address (va)
