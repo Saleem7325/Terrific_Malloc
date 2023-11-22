@@ -271,7 +271,7 @@ int add_TLB(void *va, void *pa) {
 
 
     // Store the full virtual and physical addresses
-    tlb_store.entries[index].va = (unsigned long)va;
+    tlb_store.entries[index].va = vpn << OFFSET_BITS;
     tlb_store.entries[index].pa = (unsigned long)pa;
     tlb_store.entries[index].valid = true;
 
@@ -299,14 +299,14 @@ pte_t *check_TLB(void *va) {
     unsigned long vpn = (unsigned long)va >> OFFSET_BITS;
     int index = vpn % TLB_ENTRIES;
 
-    if (tlb_store.entries[index].valid && tlb_store.entries[index].va == (unsigned long)va) {
+    if (tlb_store.entries[index].valid && tlb_store.entries[index].va == (vpn << OFFSET_BITS)/*(unsigned long)va*/) {
         //got a hit update
         tlb_hit++;  
         //preserve its address
         static pte_t pa;  
         pa = tlb_store.entries[index].pa;
         //printf("TLB Hit for VA: %p, Returning PA: %p\n", va, pa);
-        pthread_mutex_unlock(&tlb_mutex);
+        // pthread_mutex_unlock(&tlb_mutex);
         return &pa;
     }
     //miss update
@@ -331,7 +331,8 @@ void print_TLB_missrate() {
         miss_rate = tlb_miss / (tlb_hit + tlb_miss);
     }
 
-    fprintf(stderr, "TLB miss rate %lf \n", miss_rate);
+    printf("TLB miss rate %lf \n", miss_rate);
+    // printf("\nTLB hit: %f\nTLB miss: %f\n\n", tlb_hit, tlb_miss);
 }
 
 /*

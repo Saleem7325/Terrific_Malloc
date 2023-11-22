@@ -26,6 +26,8 @@ int main() {
         page = ((char *)page + 4096);
     }
 
+    print_TLB_missrate();
+
     t_free(ptr, 4096 * 10);
     print_TLB_missrate();
 
