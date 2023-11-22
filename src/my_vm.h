@@ -7,13 +7,8 @@
 #include <math.h>
 #include <pthread.h>
 
-//Assume the address space is 32 bits, so the max memory size is 4GB
-//Page size is 4KB
-
-//Add any important includes here which you may need
-
-// #define PGSIZE 4096
-#define PGSIZE 128
+// Page size
+#define PGSIZE 4096
 
 // Maximum size of virtual memory
 #define MAX_MEMSIZE 4ULL*1024*1024*1024
@@ -32,22 +27,16 @@ typedef unsigned long pde_t;
 // Structure representing a TLB entry
 struct tlb_entry {
     unsigned long va;
-    unsigned long pa;  
-    // bool valid;        
+    unsigned long pa;         
 };
 
 //Structure to represents TLB
 struct tlb {
-    /*Assume your TLB is a direct mapped TLB with number of entries as TLB_ENTRIES
-    * Think about the size of each TLB entry that performs virtual to physical
-    * address translation.
-    */
     struct tlb_entry entries[TLB_ENTRIES];
 
 };
 
 extern struct tlb tlb_store;
-// extern pde_t *page_directory;
 
 void set_physical_mem();
 pte_t* translate(pde_t *pgdir, void *va);

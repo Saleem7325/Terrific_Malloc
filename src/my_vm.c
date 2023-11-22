@@ -45,8 +45,6 @@
 */
 #define PBMAP_SIZE ((MEMSIZE / PGSIZE) / 8)
 
-
-
 /*
  * Physical memory
 */
@@ -222,8 +220,6 @@ void *create_pyhsical_addr(void *va, void *pa){
  * Function responsible for allocating and setting your physical memory 
 */
 void set_physical_mem() {
-    // pthread_mutex_init(&mutex, NULL);
-
     // Create physical memory 
     // Initialize page bitmap
     phys_mem = (char *)malloc(MEMSIZE);
@@ -250,16 +246,6 @@ void set_physical_mem() {
     // Initialize global variables for TLB hits and misses
     tlb_hit = 0;
     tlb_miss = 0;
-    // for (int i = 0; i < TLB_ENTRIES; i++) {
-    //     tlb_store.entries[i].va = 0;
-    //     tlb_store.entries[i].pa = 0;
-    //     // tlb_store.entries[i].valid = false;
-    // }
-
-    // if (!tlb_lock_initialized) {
-    //     pthread_mutex_init(&tlb_mutex, NULL);
-    //     tlb_lock_initialized = 1;
-    // } 
 
     // Print config macros for debugging
     // printf("Number of entries: %d\n", NUM_ENTRIES);
@@ -279,32 +265,18 @@ void set_physical_mem() {
  * Feel free to extend the function arguments or return type.
  */
 int add_TLB(void *va, void *pa) {
-
-    /*Part 2 HINT: Add a virtual to physical page translation to the TLB */
     if (va == NULL || pa == NULL) {
         fprintf(stderr, "Error: NULL address provided to add_TLB\n");
         return -1;
     }
 
-    // pthread_mutex_lock(&tlb_mutex);
     unsigned long vpn = (unsigned long)va >> OFFSET_BITS;
     int index = vpn % TLB_ENTRIES;
-
-    // Check if we are about to overwrite an existing valid entry
-    // if (tlb_store.entries[index].valid) {
-    //     fprintf(stderr, "Evicting TLB entry at index %d (VA: %p, PA: %p)\n", 
-    //         index, (void*)tlb_store.entries[index].va, (void*)tlb_store.entries[index].pa);
-    // }
-
 
     // Store the full virtual and physical addresses
     tlb_store.entries[index].va = vpn << OFFSET_BITS;
     tlb_store.entries[index].pa = (unsigned long)pa;
-    // tlb_store.entries[index].valid = true;
 
-    //printf("Adding to TLB: VA: %p, PA: %p, Index: %d\n", va, pa, index);
-    // pthread_mutex_unlock(&tlb_mutex);
-    // Successful addition
     return 0;  
 }
 
@@ -315,7 +287,6 @@ int add_TLB(void *va, void *pa) {
  * Feel free to extend this function and change the return type.
  */
 pte_t *check_TLB(void *va) {
-    /* Part 2: TLB lookup code here */
     if (va == NULL) {
         fprintf(stderr, "Error: NULL address provided to check_TLB\n");
         return NULL;
@@ -326,22 +297,14 @@ pte_t *check_TLB(void *va) {
     int index = vpn % TLB_ENTRIES;
 
     if (/*tlb_store.entries[index].valid &&*/ tlb_store.entries[index].va == (vpn << OFFSET_BITS)/*(unsigned long)va*/) {
-        //got a hit update
         tlb_hit++;  
-        //preserve its address
         static pte_t pa;  
         pa = tlb_store.entries[index].pa;
-        //printf("TLB Hit for VA: %p, Returning PA: %p\n", va, pa);
-        // pthread_mutex_unlock(&tlb_mutex);
         return &pa;
     }
-    //miss update
-    tlb_miss++;
-    //printf("TLB Miss for VA: %p, Returning NULL\n", va);
-    // pthread_mutex_unlock(&tlb_mutex);
-    return NULL;
 
-   /*This function should return a pte_t pointer*/
+    tlb_miss++;
+    return NULL;
 }
 
 
@@ -350,15 +313,12 @@ pte_t *check_TLB(void *va) {
  * Feel free to extend the function arguments or return type.
  */
 void print_TLB_missrate() {
-    	
     double miss_rate = 0;
-    /*Part 2 Code here to calculate and print the TLB miss rate*/
     if (tlb_hit + tlb_miss > 0) {
         miss_rate = tlb_miss / (tlb_hit + tlb_miss);
     }
 
     printf("TLB miss rate %lf \n", miss_rate);
-    // printf("\nTLB hit: %f\nTLB miss: %f\n\n", tlb_hit, tlb_miss);
 }
 
 /*
@@ -366,21 +326,12 @@ The function takes a virtual address and page directories starting address and
 performs translation to return the physical address
 */
 pte_t *translate(pde_t *pgdir, void *va) {
-    /* Part 1 HINT: Get the Page directory index (1st level) Then get the
-    * 2nd-level-page table index using the virtual address.  Using the page
-    * directory index and page table index get the physical address.
-    *
-    * Part 2 HINT: Check the TLB before performing the translation. If
-    * translation exists, then you can return physical address from the TLB.
-    */
     pte_t *pte_from_tlb = check_TLB(va);
     
     if (pte_from_tlb != NULL) {
-        // TLB hit
-        //printf("TLB provided PA: %p for VA: %p\n", (void *)*pte_from_tlb, va);
         return pte_from_tlb;
     }
-    // TLB miss
+
     int pd_index = page_directory_index(va);
     int pt_index = page_table_index(va);
     pde_t *page_table = (pde_t *)pgdir[pd_index];
@@ -436,7 +387,6 @@ int page_map(pde_t *pgdir, void *va, void *pa) {
 /*Function that gets the next available page
 */
 void *get_next_avail(int num_pages) {
-    //Use virtual address bitmap to find the next free page
     int free_pages = 0;
     int start_page = -1;
     
@@ -494,11 +444,10 @@ void *t_malloc(unsigned int num_bytes) {
     if(num_bytes > PGSIZE){
         pages = (num_bytes % PGSIZE) == 0 ? (num_bytes / PGSIZE) : ((num_bytes / PGSIZE) + 1);
     }
-    // printf("\nNum pages: %d\n", pages);
 
     unsigned long int total_pages = table_count + page_count;
     if(total_pages + pages > MEMSIZE){
-        fprintf(stderr, "Error: Not enough free memory with %ld pages in use\nPage count: %ld\nTable count: %d\n", total_pages, page_count, table_count);
+        fprintf(stderr, "Error: Not enough free memory with %ld pages in use\n", total_pages);
         pthread_mutex_unlock(&mutex);
         return NULL;
     }
@@ -520,7 +469,6 @@ void *t_malloc(unsigned int num_bytes) {
 
         page_map(page_directory, vpage, page);
         page_count++;
-        // printf("Mapping: (va : pa) %p : %p\n", vpage, page);
     }
 
     pthread_mutex_unlock(&mutex);
@@ -549,7 +497,6 @@ void t_free(void *va, int size) {
     if(size > PGSIZE){
        num_pages = ((size % PGSIZE) == 0 ? (size / PGSIZE) : ((size / PGSIZE) + 1));
     }
-    // printf("\nNum pages: %d\n", num_pages);
 
     void *current_va = va;
     int vpage_index = ((unsigned long)current_va >> OFFSET_BITS);
@@ -565,14 +512,11 @@ void t_free(void *va, int size) {
         if(*pte){
             // Get index of physical page
             int page_index = ((char *)*pte - phys_mem) / PGSIZE;
-            // printf("Freeing (va : pa) %p : %p\n", current_va, (void *)*pte);
             *pte = 0;
 
             clear_bit_at_index(page_bitmap, page_index);
             clear_bit_at_index(virt_bitmap, vpage_index++);
             page_count = page_count > 0 ? page_count - 1 : 0;
-            // page_count--;
-
             current_va = (void *)((char *)current_va + PGSIZE);
         } else {
             // Handle error: Trying to free an unallocated page
@@ -601,8 +545,6 @@ void t_free(void *va, int size) {
  * function.   
 */
 int put_value(void *va, void *val, int size) {
-    // Check if virtual address is being used.
-    // printf("\nInside put_value\n");
     if(lock_initialized){
         wait_count++;
         pthread_mutex_lock(&mutex);
@@ -660,18 +602,11 @@ int put_value(void *va, void *val, int size) {
 
     pthread_mutex_unlock(&mutex);
     return 0;
-    /*return -1 if put_value failed and 0 if put is successfull*/
-
 }
 
 
 /*Given a virtual address, this function copies the contents of the page to val*/
 void get_value(void *va, void *val, int size) {
-
-    /* HINT: put the values pointed to by "va" inside the physical memory at given
-    * "val" address. Assume you can access "val" directly by derefencing them.
-    */
-    // printf("\nInside get_value\n");
     if(lock_initialized){
         wait_count++;
         pthread_mutex_lock(&mutex);
