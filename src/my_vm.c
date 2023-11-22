@@ -229,11 +229,12 @@ void set_physical_mem() {
     table_count++; 
 
     //TLB INITIALIZATION
-    for (int i = 0; i < TLB_ENTRIES; i++) {
-        tlb_store.entries[i].va = 0;
-        tlb_store.entries[i].pa = 0;
-        tlb_store.entries[i].valid = false;
-    }
+    memset(&(tlb_store.entries), '\0', sizeof(struct tlb_entry) * TLB_ENTRIES);
+    // for (int i = 0; i < TLB_ENTRIES; i++) {
+    //     tlb_store.entries[i].va = 0;
+    //     tlb_store.entries[i].pa = 0;
+    //     // tlb_store.entries[i].valid = false;
+    // }
 
     // if (!tlb_lock_initialized) {
     //     pthread_mutex_init(&tlb_mutex, NULL);
@@ -273,7 +274,7 @@ int add_TLB(void *va, void *pa) {
     // Store the full virtual and physical addresses
     tlb_store.entries[index].va = vpn << OFFSET_BITS;
     tlb_store.entries[index].pa = (unsigned long)pa;
-    tlb_store.entries[index].valid = true;
+    // tlb_store.entries[index].valid = true;
 
     //printf("Adding to TLB: VA: %p, PA: %p, Index: %d\n", va, pa, index);
     // pthread_mutex_unlock(&tlb_mutex);
@@ -299,7 +300,7 @@ pte_t *check_TLB(void *va) {
     unsigned long vpn = (unsigned long)va >> OFFSET_BITS;
     int index = vpn % TLB_ENTRIES;
 
-    if (tlb_store.entries[index].valid && tlb_store.entries[index].va == (vpn << OFFSET_BITS)/*(unsigned long)va*/) {
+    if (/*tlb_store.entries[index].valid &&*/ tlb_store.entries[index].va == (vpn << OFFSET_BITS)/*(unsigned long)va*/) {
         //got a hit update
         tlb_hit++;  
         //preserve its address

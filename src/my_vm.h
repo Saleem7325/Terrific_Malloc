@@ -32,7 +32,7 @@ typedef unsigned long pde_t;
 struct tlb_entry {
     unsigned long va;
     unsigned long pa;  
-    bool valid;        
+    // bool valid;        
 };
 
 //Structure to represents TLB
